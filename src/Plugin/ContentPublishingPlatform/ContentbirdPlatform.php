@@ -105,8 +105,8 @@ INSTRUCTIONS;
     $connected = FALSE;
 
     try {
-      $statuses = $this->apiClient->getContentStatuses();
-      if ($statuses !== FALSE) {
+      $list_ids = $this->apiClient->getListOfIds();
+      if ($list_ids !== FALSE) {
         $connected = TRUE;
       }
     }
@@ -190,8 +190,8 @@ INSTRUCTIONS;
     // Authentication is managed by iq_contentbird_api.
     // Validate by checking if we can reach the API.
     try {
-      $statuses = $this->apiClient->getContentStatuses();
-      return $statuses !== FALSE;
+      $listOfIds = $this->apiClient->getListOfIds();
+      return $listOfIds !== FALSE;
     }
     catch (\Exception $e) {
       return FALSE;
