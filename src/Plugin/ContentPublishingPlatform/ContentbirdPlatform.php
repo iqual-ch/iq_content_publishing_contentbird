@@ -8,6 +8,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
 use Drupal\iq_content_publishing\Attribute\ContentPublishingPlatform;
 use Drupal\iq_content_publishing\Plugin\ContentPublishingPlatformBase;
+use Drupal\iq_content_publishing\Plugin\MultiToolPlatformInterface;
 use Drupal\iq_content_publishing\Plugin\PublishingResult;
 use Drupal\iq_contentbird_api\Service\ContentbirdApiClientInterface;
 use Drupal\node\NodeInterface;
@@ -28,7 +29,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
   label: new TranslatableMarkup('Contentbird'),
   description: new TranslatableMarkup('Sync content with the contentbird platform — update statuses, send published URLs, and push content data.'),
 )]
-final class ContentbirdPlatform extends ContentPublishingPlatformBase {
+final class ContentbirdPlatform extends ContentPublishingPlatformBase implements MultiToolPlatformInterface {
 
   /**
    * The Contentbird API client (from iq_contentbird_api module).
@@ -85,6 +86,73 @@ Guidelines:
 - Provide a clear, SEO-friendly title.
 - Write a concise summary suitable for a meta description (under 160 characters).
 - Produce clean HTML content suitable for a CMS integration.
+- Maintain the original meaning and key information.
+- Use proper heading hierarchy (h2, h3) within the content body.
+- Do NOT include the title in the content body.
+
+Available tokens:
+- [node:title] — The content title.
+- [node:url] — The full URL to the content.
+- [node:summary] — The content summary.
+- [node:content_type] — The content type label.
+INSTRUCTIONS;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getAvailableTools(): array {
+    try {
+      $types = $this->apiClient->getTypes();
+      $tools = [];
+      foreach ($types as $type) {
+        $toolId = (string) $type['id'];
+        $tools[$toolId] = [
+          'id' => $toolId,
+          'name' => $type['name'] ?? $type['id'],
+          'description' => $type['description'] ?? '',
+        ];
+      }
+      return $tools;
+    }
+    catch (\Exception $e) {
+      return [];
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getOutputSchemaForTool(string|int $toolId): array {
+    // All contentbird tools currently use the same schema.
+    // Override this in the future if specific tools need different fields.
+    return $this->getOutputSchema();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDefaultAiInstructionsForTool(string|int $toolId): string {
+    // Resolve the tool name for a more tailored prompt.
+    $toolName = 'content';
+    try {
+      $tools = $this->getAvailableTools();
+      if (isset($tools[(string) $toolId])) {
+        $toolName = $tools[(string) $toolId]['name'];
+      }
+    }
+    catch (\Exception) {
+      // Use generic name.
+    }
+
+    return <<<INSTRUCTIONS
+Transform the following Drupal content for the contentbird platform as a "{$toolName}" content type.
+
+Guidelines:
+- Provide a clear, SEO-friendly title appropriate for a {$toolName}.
+- Write a concise summary suitable for a meta description (under 160 characters).
+- Produce clean HTML content suitable for a CMS integration.
+- Adapt the tone and style to match a {$toolName} format.
 - Maintain the original meaning and key information.
 - Use proper heading hierarchy (h2, h3) within the content body.
 - Do NOT include the title in the content body.
@@ -229,7 +297,15 @@ INSTRUCTIONS;
   /**
    * {@inheritdoc}
    */
-  public function publish(NodeInterface $node, array $fields, array $credentials, array $settings): PublishingResult {
+  public function publish(NodeInterface $node, array $fields, array $credentials, array $settings, string|int|null $toolId = NULL): PublishingResult {
+    // If no project is configured, we can't publish.
+    $projectId = (int) ($settings['project_id'] ?? 0);
+    if ($projectId <= 0) {
+      return PublishingResult::failure(
+        'No contentbird project configured. Please select a project in the platform settings.',
+        ['error' => 'no_project_configured']
+      );
+    }
     // Extract contentbird content ID from the node.
     // This should have been stored when the content was imported from
     // contentbird (e.g., via a webhook or manual import).
@@ -329,6 +405,8 @@ INSTRUCTIONS;
 
     // No contentbird ID — create new content.
     $createData = [
+      'type_id' => $toolId !== NULL ? (int) $toolId : 1,
+      'language' => 'en',
       'title' => $title,
       'content' => $content,
     ];
