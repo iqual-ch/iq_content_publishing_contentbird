@@ -1,0 +1,24 @@
+iq_content_publishing_contentbird.credentials.contentbird:
+  type: mapping
+  label: 'Contentbird credentials'
+  mapping:
+    api_token:
+      type: string
+      label: 'API Token'
+
+iq_content_publishing_contentbird.settings.contentbird:
+  type: mapping
+  label: 'Contentbird platform settings'
+  mapping:
+    status_on_publish:
+      type: integer
+      label: 'Content status ID to set when content is published'
+    status_on_import:
+      type: integer
+      label: 'Content status ID to set when content is imported as draft'
+    status_on_failure:
+      type: integer
+      label: 'Content status ID to set on failure'
+    send_published_url:
+      type: boolean
+      label: 'Send published URL to contentbird'

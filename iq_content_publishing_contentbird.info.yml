@@ -1,0 +1,8 @@
+name: 'Content Publishing: Contentbird'
+type: module
+description: 'Provides contentbird integration for the Content Publishing framework. Enables syncing Drupal content statuses and publishing workflows with the contentbird platform.'
+package: 'Content Publishing'
+core_version_requirement: ^11
+dependencies:
+  - iq_content_publishing:iq_content_publishing
+  - iq_contentbird_api:iq_contentbird_api

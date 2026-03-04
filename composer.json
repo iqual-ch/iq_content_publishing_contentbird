@@ -1,0 +1,25 @@
+{
+  "name": "iqual/iq_content_publishing_contentbird",
+  "type": "drupal-module",
+  "description": "Provides contentbird integration for the Content Publishing framework. Enables syncing Drupal content statuses and publishing workflows with the contentbird platform.",
+  "keywords": [
+    "Drupal",
+    "contentbird",
+    "content publishing",
+    "CMS integration"
+  ],
+  "license": "GPL-2.0-or-later",
+  "homepage": "https://github.com/iqual-ch/iq_content_publishing_contentbird",
+  "minimum-stability": "dev",
+  "require": {
+    "drupal/core": "^11",
+    "iqual/iq_content_publishing": "^1",
+    "iqual/iq_contentbird_api": "dev-main"
+  },
+  "extra": {
+    "drupal": {
+      "version": "VERSION",
+      "datestamp": ""
+    }
+  }
+}

@@ -1,0 +1,56 @@
+<?php
+
+/**
+ * @file
+ * Contentbird integration for the Content Publishing framework.
+ *
+ * API token authentication is managed centrally by the iq_contentbird_api
+ * module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_entity_operation().
+ *
+ * Adds the "Fetch Content Statuses" operation to contentbird platform
+ * config entities on the admin list.
+ */
+function iq_content_publishing_contentbird_entity_operation(EntityInterface $entity): array {
+  $operations = [];
+
+  if ($entity->getEntityTypeId() !== 'publishing_platform') {
+    return $operations;
+  }
+
+  /** @var \Drupal\iq_content_publishing\Entity\PublishingPlatformConfigInterface $entity */
+  if ($entity->getPluginId() !== 'contentbird') {
+    return $operations;
+  }
+
+  // Check if the contentbird API is configured.
+  $config = \Drupal::config('iq_contentbird_api.settings');
+  $apiToken = $config->get('api_token');
+
+  if (!empty($apiToken)) {
+    $operations['contentbird_fetch_statuses'] = [
+      'title' => t('Fetch Content Statuses'),
+      'url' => Url::fromRoute('iq_content_publishing_contentbird.fetch_statuses', [
+        'platform_config' => $entity->id(),
+      ]),
+      'weight' => 52,
+    ];
+  }
+  else {
+    $operations['contentbird_configure'] = [
+      'title' => t('Configure Contentbird API'),
+      'url' => Url::fromRoute('iq_contentbird_api.settings'),
+      'weight' => 50,
+    ];
+  }
+
+  return $operations;
+}

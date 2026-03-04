@@ -1,0 +1,11 @@
+iq_content_publishing_contentbird.fetch_statuses:
+  path: '/admin/config/content-publishing/contentbird/fetch-statuses/{platform_config}'
+  defaults:
+    _controller: '\Drupal\iq_content_publishing_contentbird\Controller\ContentbirdController::fetchStatuses'
+    _title: 'Fetch Contentbird Statuses'
+  requirements:
+    _permission: 'administer content publishing'
+  options:
+    parameters:
+      platform_config:
+        type: entity:publishing_platform
