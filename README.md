@@ -80,24 +80,6 @@ The contentbird content ID is stored on the node using one of two strategies:
 1. **Dedicated field** — If the node has a `field_contentbird_id` field, it is used directly.
 2. **Key-value storage** — As a fallback, the ID is stored in Drupal's key-value store under the `iq_content_publishing_contentbird` collection.
 
-## Module Structure
-
-```
-├── composer.json
-├── iq_content_publishing_contentbird.info.yml
-├── iq_content_publishing_contentbird.module
-├── iq_content_publishing_contentbird.routing.yml
-├── config/
-│   └── schema/
-│       └── iq_content_publishing_contentbird.schema.yml
-└── src/
-    ├── Controller/
-    │   └── ContentbirdController.php        # Fetch Content Statuses action
-    └── Plugin/
-        └── ContentPublishingPlatform/
-            └── ContentbirdPlatform.php      # Main platform plugin
-```
-
 ## License
 
 GPL-2.0-or-later
