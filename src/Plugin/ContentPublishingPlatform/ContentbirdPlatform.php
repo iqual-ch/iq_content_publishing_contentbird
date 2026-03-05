@@ -157,16 +157,22 @@ INSTRUCTIONS;
         $profileData = $profiles['data'] ?? $profiles;
         if (is_array($profileData)) {
           foreach ($profileData as $profile) {
-            $pageId = $profile['id'] ?? '';
-            if ($pageId === '') {
+            $id = $profile['id'] ?? '';
+            $page_id = $profile['page_id'] ?? '';
+            if ($id === '' || $page_id === '') {
               continue;
             }
-            $profileName = $profile['name'] ?? $profile['platform'] ?? (string) $this->t('Profile #@id', ['@id' => $pageId]);
-            $toolId = static::TOOL_PREFIX_SOCIAL . $pageId;
+            if (isset($profile['network']) && isset($profile['page_name'])) {
+              $profileName = ucfirst($profile['network']) . ' - ' . $profile['page_name'];
+            }
+            else {
+              $profileName = (string) $this->t('Profile #@id', ['@id' => $id]);
+            }
+             $toolId = static::TOOL_PREFIX_SOCIAL . $id;
             $tools[$toolId] = [
               'id' => $toolId,
+              'page_id' => $page_id,
               'name' => $profileName,
-              'description' => $profile['platform'] ?? '',
             ];
           }
         }
