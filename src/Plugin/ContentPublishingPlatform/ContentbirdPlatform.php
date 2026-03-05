@@ -207,6 +207,24 @@ INSTRUCTIONS;
           'max' => 3,
           'ai_generated' => FALSE,
         ],
+        'status' => [
+          '#type' => 'select',
+          '#title' => (string) $this->t('Status'),
+          '#options' => $this->apiClient->getSocialPostStatuses(),
+          '#description' => (string) $this->t('The publishing status to set on contentbird.'),
+          '#required' => TRUE,
+        ],
+        'scheduled_time' => [
+          '#type' => 'datetime',
+          '#title' => (string) $this->t('Scheduled time'),
+          '#description' => (string) $this->t('The date and time to schedule the post for. Required if status is "Publish At".'),
+          '#required' => FALSE,
+          '#states' => [
+            'required' => [
+              ':input[name="fields[status]"]' => ['value' => 'publish_at'],
+            ],
+          ],
+        ],
       ];
     }
     return $this->getOutputSchema();
@@ -681,13 +699,33 @@ INSTRUCTIONS;
       );
     }
 
+    $type = $fields['status'] ?? 'draft';
+    $scheduledTime = $fields['scheduled_time'] ?? NULL;
+
     $createData = [
       'project_id' => $projectId,
       'page_id' => $pageId,
       'language' => $node->language()->getId() ?: 'en',
       'post_content' => $postContent,
-      'type' => 'draft',
+      'type' => $type,
     ];
+
+    if ($scheduledTime) {
+      try {
+        if ($scheduledTime instanceof \DateTimeInterface || $scheduledTime instanceof \Drupal\Core\Datetime\DrupalDateTime) {
+          $createData['publish_at'] = $scheduledTime->getTimestamp();
+        }
+        elseif (is_string($scheduledTime)) {
+          $createData['publish_at'] = (new \DateTimeImmutable($scheduledTime))->getTimestamp();
+        }
+        elseif (is_numeric($scheduledTime)) {
+          $createData['publish_at'] = (int) $scheduledTime;
+        }
+      }
+      catch (\Exception $e) {
+        // Invalid datetime format — ignore the scheduled time.
+      }
+    }
 
     // Include attachments if provided.
     // Images.
