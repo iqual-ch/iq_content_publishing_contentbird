@@ -199,6 +199,14 @@ INSTRUCTIONS;
           'required' => TRUE,
           'ai_generated' => TRUE,
         ],
+        'image' => [
+          'type' => 'image',
+          'label' => (string) $this->t('Images'),
+          'description' => (string) $this->t('Select images to attach to the post.'),
+          'required' => FALSE,
+          'max' => 3,
+          'ai_generated' => FALSE,
+        ],
       ];
     }
     return $this->getOutputSchema();
@@ -678,8 +686,34 @@ INSTRUCTIONS;
       'page_id' => $pageId,
       'language' => $node->language()->getId() ?: 'en',
       'post_content' => $postContent,
-      'type' => 'publish_now',
+      'type' => 'draft',
     ];
+
+    // Include attachments if provided.
+    // Images.
+    if (!empty($fields['image']) && is_array($fields['image'])) {
+      $attachments = [];
+      foreach ($fields['image'] as $image) {
+        if (isset($image['url'])) {
+          $attachments[] = $image['url'];
+        }
+      }
+      if (!empty($attachments)) {
+        $createData['image_attachments'] = $attachments;
+      }
+    }
+    // Videos.
+    if (!empty($fields['video']) && is_array($fields['video'])) {
+      $attachments = [];
+      foreach ($fields['video'] as $video) {
+        if (isset($video['url'])) {
+          $attachments[] = $video['url'];
+        }
+      }
+      if (!empty($attachments)) {
+        $createData['video_attachments'] = $attachments;
+      }
+    }
 
     // Include the node URL as promote_url for platforms that support it
     // (Facebook, LinkedIn).
