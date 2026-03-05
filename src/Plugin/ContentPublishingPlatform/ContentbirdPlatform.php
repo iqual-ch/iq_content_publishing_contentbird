@@ -37,6 +37,24 @@ final class ContentbirdPlatform extends ContentPublishingPlatformBase implements
   protected ContentbirdApiClientInterface $apiClient;
 
   /**
+   * Cached available tools to avoid redundant API calls within a request.
+   *
+   * Keyed by a hash of the settings used, so different settings produce
+   * different cached results.
+   */
+  protected array $availableToolsCache = [];
+
+  /**
+   * Tool ID prefix for content tools (uses createContent API).
+   */
+  protected const TOOL_PREFIX_CONTENT = 'content:';
+
+  /**
+   * Tool ID prefix for social post tools (uses createSocialPost API).
+   */
+  protected const TOOL_PREFIX_SOCIAL = 'social:';
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition): static {
@@ -66,11 +84,12 @@ final class ContentbirdPlatform extends ContentPublishingPlatformBase implements
         'ai_generated' => TRUE,
       ],
       'content' => [
-        'type' => 'textarea',
+        'type' => 'text_format',
         'label' => (string) $this->t('Content body'),
         'description' => (string) $this->t('The main HTML content body to sync with contentbird.'),
         'required' => TRUE,
         'ai_generated' => TRUE,
+        'format' => 'content_format',
       ],
     ];
   }
@@ -101,31 +120,81 @@ INSTRUCTIONS;
   /**
    * {@inheritdoc}
    */
-  public function getAvailableTools(): array {
+  public function getAvailableTools(array $settings = []): array {
+    $cacheKey = md5(serialize($settings));
+    if (isset($this->availableToolsCache[$cacheKey])) {
+      return $this->availableToolsCache[$cacheKey];
+    }
+
+    $tools = [];
+
+    // Content tools: one per contentbird type (Wiki, News, etc.).
+    // Each uses the createContent API with the corresponding type_id.
     try {
       $types = $this->apiClient->getTypes();
-      $tools = [];
       foreach ($types as $type) {
-        $toolId = (string) $type['id'];
+        $typeId = (string) $type['id'];
+        $toolId = static::TOOL_PREFIX_CONTENT . $typeId;
         $tools[$toolId] = [
           'id' => $toolId,
-          'name' => $type['name'] ?? $type['id'],
+          'name' => $type['name'] ?? $typeId,
           'description' => $type['description'] ?? '',
+          'group' => 'content',
+          'group_label' => (string) $this->t('Content'),
         ];
       }
-      return $tools;
     }
-    catch (\Exception $e) {
-      return [];
+    catch (\Exception) {
+      // API not reachable — skip content tools.
     }
+
+    // Social tools: one per active social profile on the project.
+    // Each uses the createSocialPost API with the corresponding page_id.
+    $projectId = (int) ($settings['project_id'] ?? 0);
+    if ($projectId > 0) {
+      try {
+        $profiles = $this->apiClient->getProjectSocialProfiles($projectId);
+        $profileData = $profiles['data'] ?? $profiles;
+        if (is_array($profileData)) {
+          foreach ($profileData as $profile) {
+            $pageId = $profile['id'] ?? '';
+            if ($pageId === '') {
+              continue;
+            }
+            $profileName = $profile['name'] ?? $profile['platform'] ?? (string) $this->t('Profile #@id', ['@id' => $pageId]);
+            $toolId = static::TOOL_PREFIX_SOCIAL . $pageId;
+            $tools[$toolId] = [
+              'id' => $toolId,
+              'name' => $profileName,
+              'description' => $profile['platform'] ?? '',
+            ];
+          }
+        }
+      }
+      catch (\Exception) {
+        // API not reachable or no project — skip social tools.
+      }
+    }
+
+    $this->availableToolsCache[$cacheKey] = $tools;
+    return $tools;
   }
 
   /**
    * {@inheritdoc}
    */
   public function getOutputSchemaForTool(string|int $toolId): array {
-    // All contentbird tools currently use the same schema.
-    // Override this in the future if specific tools need different fields.
+    if (str_starts_with((string) $toolId, static::TOOL_PREFIX_SOCIAL)) {
+      return [
+        'post_content' => [
+          'type' => 'textarea',
+          'label' => (string) $this->t('Post content'),
+          'description' => (string) $this->t('The text content for the social media post.'),
+          'required' => TRUE,
+          'ai_generated' => TRUE,
+        ],
+      ];
+    }
     return $this->getOutputSchema();
   }
 
@@ -133,26 +202,65 @@ INSTRUCTIONS;
    * {@inheritdoc}
    */
   public function getDefaultAiInstructionsForTool(string|int $toolId): string {
-    // Resolve the tool name for a more tailored prompt.
-    $toolName = 'content';
-    try {
-      $tools = $this->getAvailableTools();
-      if (isset($tools[(string) $toolId])) {
-        $toolName = $tools[(string) $toolId]['name'];
+    $toolIdStr = (string) $toolId;
+
+    // Social tools get a dedicated prompt focused on short-form posts.
+    if (str_starts_with($toolIdStr, static::TOOL_PREFIX_SOCIAL)) {
+      // Try to resolve the profile name from cached tools for a richer prompt.
+      $profileName = 'social media';
+      $tools = $this->availableToolsCache;
+      foreach ($tools as $cache) {
+        if (isset($cache[$toolIdStr])) {
+          $profileName = $cache[$toolIdStr]['name'];
+          break;
+        }
       }
+
+      return <<<INSTRUCTIONS
+Create a compelling {$profileName} post based on the following Drupal content.
+
+Guidelines:
+- Write engaging, concise copy suitable for {$profileName}.
+- Keep the tone professional but conversational.
+- Include a clear call to action where appropriate.
+- Do NOT use HTML — plain text only.
+- Keep the post within the platform's typical character limits.
+- Reference the content URL using [node:url] if appropriate.
+
+Available tokens:
+- [node:title] — The content title.
+- [node:url] — The full URL to the content.
+- [node:summary] — The content summary.
+- [node:content_type] — The content type label.
+INSTRUCTIONS;
     }
-    catch (\Exception) {
-      // Use generic name.
+
+    // Content tools: resolve the type name for a tailored prompt.
+    $typeName = 'content';
+    if (str_starts_with($toolIdStr, static::TOOL_PREFIX_CONTENT)) {
+      $typeId = substr($toolIdStr, strlen(static::TOOL_PREFIX_CONTENT));
+      try {
+        $types = $this->apiClient->getTypes();
+        foreach ($types as $type) {
+          if ((string) $type['id'] === $typeId) {
+            $typeName = $type['name'] ?? $typeId;
+            break;
+          }
+        }
+      }
+      catch (\Exception) {
+        // Use generic name.
+      }
     }
 
     return <<<INSTRUCTIONS
-Transform the following Drupal content for the contentbird platform as a "{$toolName}" content type.
+Transform the following Drupal content for the contentbird platform as a "{$typeName}" content type.
 
 Guidelines:
-- Provide a clear, SEO-friendly title appropriate for a {$toolName}.
+- Provide a clear, SEO-friendly title appropriate for a {$typeName}.
 - Write a concise summary suitable for a meta description (under 160 characters).
 - Produce clean HTML content suitable for a CMS integration.
-- Adapt the tone and style to match a {$toolName} format.
+- Adapt the tone and style to match a {$typeName} format.
 - Maintain the original meaning and key information.
 - Use proper heading hierarchy (h2, h3) within the content body.
 - Do NOT include the title in the content body.
@@ -239,10 +347,14 @@ INSTRUCTIONS;
     $form['project_id'] = [
       '#type' => 'select',
       '#title' => $this->t('Contentbird Project'),
-      '#description' => $this->t('Select the contentbird project to publish content to.'),
+      '#description' => $this->t('Select the contentbird project to publish content to. Changing this refreshes the available social integrations below.'),
       '#options' => $projectOptions,
       '#default_value' => $settings['project_id'] ?? '',
       '#required' => TRUE,
+      '#ajax' => [
+        'callback' => '::pluginSettingsAjax',
+        'wrapper' => 'plugin-settings-wrapper',
+      ],
     ];
 
     $form['status_on_publish'] = [
@@ -338,6 +450,25 @@ INSTRUCTIONS;
     $statusId = (int) ($settings['status_on_publish'] ?? 0);
     $failureStatusId = (int) ($settings['status_on_failure'] ?? 0);
 
+    // Route based on tool ID prefix.
+    $toolIdStr = $toolId !== NULL ? (string) $toolId : '';
+
+    // Social tools — use the createSocialPost API.
+    if (str_starts_with($toolIdStr, static::TOOL_PREFIX_SOCIAL)) {
+      $pageId = (int) substr($toolIdStr, strlen(static::TOOL_PREFIX_SOCIAL));
+      return $this->publishSocialPost($node, $fields, $settings, $pageId, $publishedUrl);
+    }
+
+    // Content tools — extract the type_id from the tool ID.
+    $typeId = 1;
+    if (str_starts_with($toolIdStr, static::TOOL_PREFIX_CONTENT)) {
+      $typeId = (int) substr($toolIdStr, strlen(static::TOOL_PREFIX_CONTENT));
+    }
+    elseif (is_numeric($toolIdStr)) {
+      // Legacy fallback: bare numeric tool IDs are treated as type_id.
+      $typeId = (int) $toolIdStr;
+    }
+
     if ($contentbirdId) {
       // Update the content body/title in contentbird.
       $updateData = [
@@ -405,8 +536,8 @@ INSTRUCTIONS;
 
     // No contentbird ID — create new content.
     $createData = [
-      'type_id' => $toolId !== NULL ? (int) $toolId : 1,
-      'language' => 'en',
+      'type_id' => $typeId,
+      'language' => $node->language()->getId() ?: 'en',
       'title' => $title,
       'content' => $content,
     ];
@@ -506,6 +637,71 @@ INSTRUCTIONS;
     // Fallback: use key-value storage.
     $keyValue = \Drupal::keyValue('iq_content_publishing_contentbird');
     $keyValue->set('node_' . $node->id(), $contentbird_id);
+  }
+
+  /**
+   * Publishes content as a social media post via the contentbird API.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node being published.
+   * @param array $fields
+   *   The AI-generated (or editor-modified) fields.
+   * @param array $settings
+   *   The platform plugin settings.
+   * @param int $pageId
+   *   The social profile page ID to post to.
+   * @param string $publishedUrl
+   *   The published URL of the node (used as promote_url).
+   *
+   * @return \Drupal\iq_content_publishing\Plugin\PublishingResult
+   *   The publishing result.
+   */
+  protected function publishSocialPost(NodeInterface $node, array $fields, array $settings, int $pageId, string $publishedUrl): PublishingResult {
+    $projectId = (int) ($settings['project_id'] ?? 0);
+
+    $postContent = $fields['post_content'] ?? $fields['content'] ?? '';
+    if (empty($postContent)) {
+      return PublishingResult::failure(
+        'No post content provided for the social post.',
+        ['error' => 'empty_post_content']
+      );
+    }
+
+    $createData = [
+      'project_id' => $projectId,
+      'page_id' => $pageId,
+      'language' => $node->language()->getId() ?: 'en',
+      'post_content' => $postContent,
+      'type' => 'publish_now',
+    ];
+
+    // Include the node URL as promote_url for platforms that support it
+    // (Facebook, LinkedIn).
+    if (!empty($publishedUrl)) {
+      $createData['promote_url'] = $publishedUrl;
+    }
+
+    $result = $this->apiClient->createSocialPost($createData);
+
+    if ($result !== FALSE) {
+      $postId = $result['id'] ?? $result['data']['id'] ?? NULL;
+      return PublishingResult::success(
+        'Successfully created social post in contentbird.' . ($postId ? " Post ID: {$postId}" : ''),
+        [
+          'social_post_id' => $postId,
+          'page_id' => $pageId,
+          'api_response' => $result,
+        ]
+      );
+    }
+
+    return PublishingResult::failure(
+      'Failed to create social post in contentbird. Check the API logs for details.',
+      [
+        'error' => 'social_post_create_failed',
+        'page_id' => $pageId,
+      ]
+    );
   }
 
 }
