@@ -369,7 +369,11 @@ INSTRUCTIONS;
 
       $statuses = $this->apiClient->getStatuses();
       foreach ($statuses as $status) {
-        $statusOptions[$status['id']] = $status['name'] . ' (ID: ' . $status['id'] . ')';
+        // For now only allow unpublished statuses.
+        if (isset($status['isPublished']) && $status['isPublished'] === TRUE) {
+          continue;
+        }
+        $statusOptions[$status['id']] = $status['name'] . ' (' . $status['description'] . ')';
       }
     }
     catch (\Exception $e) {
@@ -389,28 +393,13 @@ INSTRUCTIONS;
       ],
     ];
 
-    $form['status_on_publish'] = [
+    $form['allowed_status'] = [
       '#type' => 'select',
-      '#title' => $this->t('Status: Published'),
-      '#description' => $this->t('The contentbird content status to set when content is published in Drupal.'),
+      '#title' => $this->t('Status'),
+      '#description' => $this->t('The contentbird content status to set when content is sent. (Only for the content integration, not social posts.)'),
       '#options' => $statusOptions,
-      '#default_value' => $settings['status_on_publish'] ?? '',
-    ];
-
-    $form['status_on_import'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Status: Imported'),
-      '#description' => $this->t('The contentbird content status to set when content is imported as a draft in Drupal.'),
-      '#options' => $statusOptions,
-      '#default_value' => $settings['status_on_import'] ?? '',
-    ];
-
-    $form['status_on_failure'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Status: Failed'),
-      '#description' => $this->t('The contentbird content status to set when publishing fails.'),
-      '#options' => $statusOptions,
-      '#default_value' => $settings['status_on_failure'] ?? '',
+      '#default_value' => $settings['allowed_status'] ?? '',
+      '#required' => TRUE,
     ];
 
     $form['send_published_url'] = [
@@ -479,8 +468,7 @@ INSTRUCTIONS;
     }
 
     // Determine the status ID to set.
-    $statusId = (int) ($settings['status_on_publish'] ?? 0);
-    $failureStatusId = (int) ($settings['status_on_failure'] ?? 0);
+    $statusId = (int) ($settings['allowed_status'] ?? 0);
 
     // Route based on tool ID prefix.
     $toolIdStr = $toolId !== NULL ? (string) $toolId : '';
@@ -517,10 +505,6 @@ INSTRUCTIONS;
       $updateResult = $this->apiClient->updateContent($contentbirdId, $updateData);
 
       if ($updateResult === FALSE) {
-        // On failure, try to set the "failed" status if configured.
-        if ($failureStatusId > 0) {
-          $this->apiClient->updateStatusUnpublishedContent($contentbirdId, $failureStatusId);
-        }
 
         return PublishingResult::failure(
           "Failed to update content #{$contentbirdId} in contentbird. Check the API logs for details.",
@@ -531,37 +515,13 @@ INSTRUCTIONS;
         );
       }
 
-      // Mark the content as published via the dedicated endpoint.
-      $publishResult = $this->apiClient->updateStatusPublishedContent(
-        $contentbirdId,
-        $publishedUrl,
-        $publishedAt,
-        NULL,
-        $statusId > 0 ? $statusId : NULL,
-      );
-
-      if ($publishResult !== FALSE) {
-        return PublishingResult::success(
-          "Successfully updated and published content #{$contentbirdId} in contentbird.",
-          [
-            'contentbird_id' => $contentbirdId,
-            'published_url' => $publishedUrl,
-            'status_id' => $statusId,
-            'api_response' => $publishResult,
-          ]
-        );
-      }
-
-      // Content was updated but publish-status call failed.
-      if ($failureStatusId > 0) {
-        $this->apiClient->updateStatusUnpublishedContent($contentbirdId, $failureStatusId);
-      }
-
-      return PublishingResult::failure(
-        "Content #{$contentbirdId} was updated but the publish status could not be set. Check the API logs for details.",
+      return PublishingResult::success(
+        "Successfully updated content #{$contentbirdId} in contentbird.",
         [
-          'error' => 'publish_status_failed',
           'contentbird_id' => $contentbirdId,
+          'published_url' => $publishedUrl,
+          'status_id' => $statusId > 0 ? $statusId : NULL,
+          'api_response' => $updateResult,
         ]
       );
     }
@@ -572,6 +532,7 @@ INSTRUCTIONS;
       'language' => $node->language()->getId() ?: 'en',
       'title' => $title,
       'content' => $content,
+      'status_id' => $statusId > 0 ? $statusId : NULL,
     ];
 
     // Associate with the configured project.
@@ -593,15 +554,6 @@ INSTRUCTIONS;
       $newId = $result['id'] ?? $result['data']['id'] ?? NULL;
       if ($newId !== NULL) {
         $this->setContentbirdId($node, (int) $newId);
-
-        // Mark the newly created content as published.
-        $this->apiClient->updateStatusPublishedContent(
-          (int) $newId,
-          $publishedUrl,
-          $publishedAt,
-          NULL,
-          $statusId > 0 ? $statusId : NULL,
-        );
       }
 
       return PublishingResult::success(
@@ -609,7 +561,7 @@ INSTRUCTIONS;
         [
           'contentbird_id' => $newId,
           'published_url' => $publishedUrl,
-          'status_id' => $statusId,
+          'status_id' => $statusId > 0 ? $statusId : NULL,
           'api_response' => $result,
         ]
       );
