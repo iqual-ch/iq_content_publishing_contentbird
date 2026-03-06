@@ -356,7 +356,7 @@ INSTRUCTIONS;
   /**
    * {@inheritdoc}
    */
-  public function buildSettingsForm(array $form, array $settings): array {
+  public function buildSettingsForm(array $form, array $settings, array $credentials = []): array {
     // Fetch projects and statuses from the API for the select options.
     $projectOptions = ['' => $this->t('- Select a project -')];
     $statusOptions = ['' => $this->t('- Select a status -')];
