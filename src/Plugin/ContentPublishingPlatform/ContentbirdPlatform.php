@@ -89,7 +89,6 @@ final class ContentbirdPlatform extends ContentPublishingPlatformBase implements
         'description' => (string) $this->t('The main HTML content body to sync with contentbird.'),
         'required' => TRUE,
         'ai_generated' => TRUE,
-        'format' => 'content_format',
       ],
     ];
   }
