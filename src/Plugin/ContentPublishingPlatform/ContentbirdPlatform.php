@@ -498,8 +498,10 @@ INSTRUCTIONS;
       // Legacy fallback: bare numeric tool IDs are treated as type_id.
       $typeId = (int) $toolIdStr;
     }
-    // Content tools — Use html-body instead.
-    $content = $fields['html_body']['value'] ?? $content;
+    // Content tools — Use html_body instead of markdown content.
+    if (!empty($fields['html_body'])) {
+      $content = is_array($fields['html_body']) ? ($fields['html_body']['value'] ?? $content) : $fields['html_body'];
+    }
 
     if ($contentbirdId) {
       // Update the content body/title in contentbird.
