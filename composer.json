@@ -14,7 +14,8 @@
   "require": {
     "drupal/core": "^11",
     "iqual/iq_content_publishing": "^1",
-    "iqual/iq_contentbird_api": "dev-main"
+    "iqual/iq_contentbird_api": "dev-main",
+    "league/commonmark": "^2.0"
   },
   "extra": {
     "drupal": {

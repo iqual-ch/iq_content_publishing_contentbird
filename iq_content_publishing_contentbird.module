@@ -11,7 +11,9 @@
 declare(strict_types=1);
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use League\CommonMark\CommonMarkConverter;
 
 /**
  * Implements hook_entity_operation().
@@ -53,4 +55,50 @@ function iq_content_publishing_contentbird_entity_operation(EntityInterface $ent
   }
 
   return $operations;
+}
+
+/**
+ * Implements hook_form_alter() for the publishing review form.
+ *
+ * Converts the AI-generated markdown content to HTML and populates
+ * the html_body field for user review and editing.
+ */
+function iq_content_publishing_contentbird_form_iq_content_publishing_review_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  $generatedContents = $form_state->get('generated_contents') ?? [];
+  if (empty($generatedContents)) {
+    return;
+  }
+
+  $platformStorage = \Drupal::entityTypeManager()->getStorage('publishing_platform');
+
+  foreach ($generatedContents as $entryKey => $data) {
+    $platformId = $data['platform_id'] ?? '';
+    if (empty($platformId)) {
+      continue;
+    }
+
+    /** @var \Drupal\iq_content_publishing\Entity\PublishingPlatformConfigInterface|null $platform */
+    $platform = $platformStorage->load($platformId);
+    if (!$platform || $platform->getPluginId() !== 'contentbird') {
+      continue;
+    }
+
+    // Check if we have markdown content to convert.
+    $markdownContent = $data['fields']['content'] ?? '';
+    if (empty($markdownContent) || !is_string($markdownContent)) {
+      continue;
+    }
+
+    // Convert markdown to HTML.
+    $converter = new CommonMarkConverter();
+    $htmlContent = $converter->convert($markdownContent)->getContent();
+
+    // Constrain images to fit layouts.
+    $htmlContent = preg_replace('/<img\b/', '<img style="max-width:100%;height:auto;"', $htmlContent);
+
+    // Update the form field's default value to the converted HTML.
+    if (isset($form['platforms'][$entryKey]['fields']['html_body'])) {
+      $form['platforms'][$entryKey]['fields']['html_body']['#default_value'] = $htmlContent;
+    }
+  }
 }

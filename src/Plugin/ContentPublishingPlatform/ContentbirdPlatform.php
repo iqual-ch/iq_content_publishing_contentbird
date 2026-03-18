@@ -84,11 +84,20 @@ final class ContentbirdPlatform extends ContentPublishingPlatformBase implements
         'ai_generated' => TRUE,
       ],
       'content' => [
-        'type' => 'text_format',
+        'type' => 'hidden',
         'label' => (string) $this->t('Content body'),
-        'description' => (string) $this->t('The main HTML content body to sync with contentbird.'),
+        'description' => (string) $this->t('The main content as markdown.'),
         'required' => TRUE,
+        'max_length' => 5000,
         'ai_generated' => TRUE,
+        'markdown' => TRUE,
+      ],
+      'html_body' => [
+        'type' => 'text_format',
+        'label' => (string) $this->t('HTML body'),
+        'description' => (string) $this->t('The HTML content.'),
+        'required' => TRUE,
+        'ai_generated' => FALSE,
       ],
     ];
   }
@@ -103,9 +112,11 @@ Transform the following Drupal content for the contentbird platform.
 Guidelines:
 - Provide a clear, SEO-friendly title.
 - Write a concise summary suitable for a meta description (under 160 characters).
-- Produce clean HTML content suitable for a CMS integration.
+- Produce the content body as clean Markdown (NOT HTML).
+- Use Markdown syntax: ## for h2, ### for h3, **bold**, *italic*, - for lists.
+- Do NOT use HTML tags in the content field.
 - Maintain the original meaning and key information.
-- Use proper heading hierarchy (h2, h3) within the content body.
+- Use proper heading hierarchy (##, ###) within the content body.
 - Do NOT include the title in the content body.
 
 Available tokens:
@@ -290,10 +301,10 @@ Transform the following Drupal content for the contentbird platform as a "{$type
 Guidelines:
 - Provide a clear, SEO-friendly title appropriate for a {$typeName}.
 - Write a concise summary suitable for a meta description (under 160 characters).
-- Produce clean HTML content suitable for a CMS integration.
+- Produce clean Markdown content suitable for a CMS integration.
 - Adapt the tone and style to match a {$typeName} format.
 - Maintain the original meaning and key information.
-- Use proper heading hierarchy (h2, h3) within the content body.
+- Use proper heading hierarchy within the content body.
 - Do NOT include the title in the content body.
 
 Available tokens:
@@ -487,6 +498,8 @@ INSTRUCTIONS;
       // Legacy fallback: bare numeric tool IDs are treated as type_id.
       $typeId = (int) $toolIdStr;
     }
+    // Content tools — Use html-body instead.
+    $content = $fields['html_body']['value'] ?? $content;
 
     if ($contentbirdId) {
       // Update the content body/title in contentbird.
